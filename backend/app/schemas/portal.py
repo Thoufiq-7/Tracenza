@@ -1,9 +1,10 @@
 """Institution-facing ("blind") views.
 
 The college portal must not reveal AI forensic results, risk scores, verification outcomes or
-processing stages, so institutions cannot probe or adapt to the detectors. These schemas expose
-only what an institution legitimately needs: what it submitted, that it was received, the
-checklist, the official workflow status, and clarification requests addressed to it.
+internal triage queues, so institutions cannot probe or adapt to the detectors. These schemas expose
+only what an institution legitimately needs: what it submitted, static receipt confirmations
+("received" / "Document Received"), the checklist, the official workflow status, and clarification
+requests addressed to it.
 """
 
 from datetime import datetime
@@ -32,7 +33,7 @@ class PortalDocument(BaseModel):
     file_size: int
     uploaded_at: datetime
     is_current: bool
-    state: str = "received"  # always static: no processing stage, no flags
+    state: str = "received"  # strictly static confirmation receipt: no processing stage, no flags, no scores
 
 
 class PortalApplication(BaseModel):
@@ -52,16 +53,30 @@ class PortalApplication(BaseModel):
 
 
 def portal_document(doc: Document) -> PortalDocument:
-    return PortalDocument(id=doc.id, doc_type=doc.doc_type, original_filename=doc.original_filename,
-                          file_size=doc.file_size, uploaded_at=doc.uploaded_at, is_current=doc.is_current)
+    return PortalDocument(
+        id=doc.id,
+        doc_type=doc.doc_type,
+        original_filename=doc.original_filename,
+        file_size=doc.file_size,
+        uploaded_at=doc.uploaded_at,
+        is_current=doc.is_current,
+        state="received",
+    )
 
 
 def portal_application(app: Application, checklist: list[dict] | None = None, with_documents: bool = True) -> PortalApplication:
     return PortalApplication(
-        id=app.id, application_number=app.application_number, institution_name=app.institution_name,
-        permanent_id=app.permanent_id, requested_intake=app.requested_intake, category=app.category,
-        academic_year=app.academic_year, status=PORTAL_STATUS[app.status], rectification_due=app.rectification_due,
-        submitted_at=app.submitted_at, updated_at=app.updated_at,
+        id=app.id,
+        application_number=app.application_number,
+        institution_name=app.institution_name,
+        permanent_id=app.permanent_id,
+        requested_intake=app.requested_intake,
+        category=app.category,
+        academic_year=app.academic_year,
+        status=PORTAL_STATUS[app.status],
+        rectification_due=app.rectification_due,
+        submitted_at=app.submitted_at,
+        updated_at=app.updated_at,
         documents=[portal_document(d) for d in sorted(app.documents, key=lambda d: d.uploaded_at)] if with_documents else [],
         checklist=[{k: v for k, v in c.items() if k in ("doc_type", "title", "description")} for c in (checklist or [])],
     )

@@ -12,6 +12,7 @@ celery = Celery(
         "app.tasks.document_tasks",
         "app.tasks.verification_tasks",
         "app.tasks.notification_tasks",
+        "app.tasks.obligation_tasks",
     ],
 )
 
@@ -26,9 +27,10 @@ celery.conf.update(
     worker_prefetch_multiplier=1,
     result_expires=3600,
     task_routes={
-        "app.tasks.document_tasks.*": {"queue": "heavy"},          # OCR, forensics, YOLO
+        "app.tasks.document_tasks.*": {"queue": "heavy"},          # OCR, vision
         "app.tasks.verification_tasks.*": {"queue": "light"},      # issuing-authority lookups
         "app.tasks.notification_tasks.*": {"queue": "light"},
+        "app.tasks.obligation_tasks.*": {"queue": "light"},        # periodic obligation sweeps
     },
     task_default_queue="default",
     beat_schedule={
@@ -36,6 +38,11 @@ celery.conf.update(
         "retry-unavailable-verifications": {
             "task": "app.tasks.verification_tasks.retry_due_verifications",
             "schedule": 900.0,
+        },
+        # Celery Beat periodic sweep: evaluates upcoming and overdue obligations, dispatching multi-channel alerts
+        "sweep-compliance-obligations": {
+            "task": "app.tasks.obligation_tasks.sweep_obligations_and_dispatch_alerts",
+            "schedule": 3600.0,  # runs every hour
         },
     },
 )

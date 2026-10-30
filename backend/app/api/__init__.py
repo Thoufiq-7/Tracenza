@@ -11,15 +11,28 @@ from app.api.dashboard import router as dashboard_router
 from app.api.documents import router as documents_router
 from app.api.infrastructure import router as infrastructure_router
 from app.api.notifications import router as notifications_router
+from app.api.obligations import router as obligations_router
 from app.api.validation import router as validation_router
 from app.api.verification import router as verification_router
 from app.api.triage import router as triage_router
 
 api_router = APIRouter(prefix="/api")
 
-for r in (auth_router, applications_router, documents_router, validation_router, verification_router,
-          compliance_router, infrastructure_router, dashboard_router, audit_router, notifications_router, admin_router,
-          triage_router):
+for r in (
+    auth_router,
+    applications_router,
+    documents_router,
+    validation_router,
+    verification_router,
+    compliance_router,
+    infrastructure_router,
+    dashboard_router,
+    audit_router,
+    notifications_router,
+    obligations_router,
+    admin_router,
+    triage_router,
+):
     api_router.include_router(r)
 
 __all__ = ["api_router"]

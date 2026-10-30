@@ -2,7 +2,7 @@
 
 from app.core.database import Base
 from app.models.user import User, UserRole
-from app.models.application import Application, ApplicationCategory, ApplicationStatus, AIRecommendation
+from app.models.application import Application, ApplicationCategory, ApplicationStatus, WorkflowStage, AIRecommendation
 from app.models.document import Document, DocumentType, DocumentStatus
 from app.models.validation_result import ValidationResult, CheckType, Severity
 from app.models.verification import Verification, VerificationMethod, VerificationStatus
@@ -18,6 +18,7 @@ __all__ = [
     "Application",
     "ApplicationCategory",
     "ApplicationStatus",
+    "WorkflowStage",
     "AIRecommendation",
     "Document",
     "DocumentType",

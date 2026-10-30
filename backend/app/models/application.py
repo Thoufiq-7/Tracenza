@@ -29,6 +29,20 @@ class ApplicationStatus(str, enum.Enum):
     REJECTED = "rejected"
 
 
+class WorkflowStage(str, enum.Enum):
+    """Core AICTE Approval Workflow Pipeline Stages:
+    1. SCRUTINY: Document completeness, APH norm checks, and statutory eligibility.
+    2. EVC: Expert Visiting Committee physical/virtual infrastructure inspection.
+    3. SAC_SHC: Standing Appeals Committee / Standing Hearing Committee for hearings & grievances.
+    4. FINAL_REVIEW: Final officer assessment prior to EoA/LoA or rejection issuance.
+    """
+
+    SCRUTINY = "SCRUTINY"
+    EVC = "EVC"
+    SAC_SHC = "SAC_SHC"
+    FINAL_REVIEW = "FINAL_REVIEW"
+
+
 class AIRecommendation(str, enum.Enum):
     """Advisory outcome of the automated pre-screening. Never applied automatically."""
 
@@ -52,6 +66,7 @@ class Application(Base):
     category = Column(Enum(ApplicationCategory), default=ApplicationCategory.EOA, nullable=False)
     academic_year = Column(String(32), default="2026-2027", nullable=False)
     status = Column(Enum(ApplicationStatus), default=ApplicationStatus.SUBMITTED, nullable=False)
+    stage = Column(String(32), default=WorkflowStage.SCRUTINY.value, nullable=False)
 
     # AI decision-support output (advisory only)
     risk_score = Column(Float, default=0.0, nullable=False)  # 0 to 100

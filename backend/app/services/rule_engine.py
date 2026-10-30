@@ -1,15 +1,16 @@
-"""Deterministic compliance rule engine (no generative AI).
+"""Deterministic AICTE Approval Process Handbook (APH) compliance rule engine.
 
-Every result is computed from extracted facts with exact decimal arithmetic and fixed thresholds,
-and carries a human-readable calculation trace, so the same inputs always give the same outcome.
+Every result is computed from extracted facts with exact Decimal arithmetic and fixed handbook thresholds,
+and carries a human-readable step-by-step calculation trace, so identical inputs always produce
+the exact same deterministic outcome.
 
 Rule `conditions` (data, editable by admins, versioned):
     {
-      "requires_doc": "faculty_list",                    # completeness (missing -> AMBER)
+      "requires_doc": "faculty_list",                    # completeness check (missing -> AMBER)
       "check": {
-        "fact": "docs.faculty_list.total_faculty",       # value under test (may also be an "expr")
-        "op": ">=",                                      # >= > <= < == != between in exists valid_on
-        "value": {"expr": "ceil(computed.total_students / 20)"} | 2.5 | [min, max] | "paid",
+        "fact": "docs.faculty_list.total_faculty",       # value under test (or "expr")
+        "op": ">=",                                      # >= > <= < == != between in exists valid_on not_expired
+        "value": {"expr": "ceil(computed.total_students / 15)"} | 2.5 | [min, max] | "paid",
         "unit": "acres" | "sqm" | "sqft" | "count" | "ratio",   # optional normalisation
         "label": "Regular faculty"
       },
@@ -18,9 +19,9 @@ Rule `conditions` (data, editable by admins, versioned):
     }
 
 Outcomes (RAG):
-    GREEN  requirement met (auto-pass)
-    AMBER  document missing, expired or unreadable -> clarification from the institution
-    RED    deterministic bound violated -> officer must confirm or override
+    GREEN  requirement met (deterministic auto-pass)
+    AMBER  document missing, expired or unreadable -> clarification request to the institution
+    RED    deterministic APH bound violated -> scrutiny officer must confirm or override with written audit reason
 """
 
 import ast
@@ -39,8 +40,13 @@ GREEN, AMBER, RED, NA = "green", "amber", "red", "not_applicable"
 OPS = {">=", ">", "<=", "<", "==", "!=", "between", "in", "exists", "valid_on", "not_expired", "is_true"}
 OP_TEXT = {">=": "≥", ">": ">", "<=": "≤", "<": "<", "==": "=", "!=": "≠"}
 
-# Unit normalisation to a base unit per dimension
-AREA_TO_SQM = {"sqm": Decimal(1), "sqft": Decimal("0.09290304"), "acres": Decimal("4046.8564224"), "hectares": Decimal(10000)}
+# Unit normalisation to a base unit per dimension using exact Decimals
+AREA_TO_SQM = {
+    "sqm": Decimal(1),
+    "sqft": Decimal("0.09290304"),
+    "acres": Decimal("4046.8564224"),
+    "hectares": Decimal(10000),
+}
 DEFAULT_PROGRAM_YEARS = 4  # UG engineering; configurable per rule via computed.program_years
 
 
@@ -50,18 +56,41 @@ class RuleError(ValueError):
 
 # ------------------------------------------------------------------ facts
 
-def build_facts(app: Application, docs: list[Document], records: dict[str, Any] | None,
-                records_status: str = "unavailable", program_years: int = DEFAULT_PROGRAM_YEARS) -> dict[str, Any]:
+def build_facts(
+    app: Application,
+    docs: list[Document],
+    records: dict[str, Any] | None,
+    records_status: str = "unavailable",
+    program_years: int = DEFAULT_PROGRAM_YEARS,
+) -> dict[str, Any]:
     facts: dict[str, Any] = {
         "app.category": app.category.value,
         "app.requested_intake": app.requested_intake,
         "app.academic_year": app.academic_year,
+        "app.stage": getattr(app, "stage", "SCRUTINY"),
         "computed.today": today(),
         "computed.program_years": program_years,
+        "computed.min_classroom_norm_sqm": Decimal("66.0"),
+        "computed.instructional_area_norm_per_student_sqm": Decimal("4.5"),
         "records.status": records_status,
     }
-    if app.requested_intake:
-        facts["computed.total_students"] = app.requested_intake * program_years
+
+    if app.requested_intake is not None and app.requested_intake > 0:
+        intake_dec = Decimal(str(app.requested_intake))
+        years_dec = Decimal(str(program_years))
+        total_students_dec = intake_dec * years_dec
+        facts["computed.total_students"] = int(total_students_dec)
+        # AICTE UG Engineering norm (1:15 & 1:20):
+        faculty_15 = math.ceil(total_students_dec / Decimal(15))
+        faculty_20 = math.ceil(total_students_dec / Decimal(20))
+        facts["computed.faculty_required_1_15"] = faculty_15
+        facts["computed.faculty_required_1_20"] = faculty_20
+        # Cadre ratio 1 Professor : 2 Assoc : 6 Asst (Professors = ceil(faculty / 9))
+        facts["computed.professors_required_1_15"] = math.ceil(Decimal(faculty_15) / Decimal(9))
+        facts["computed.professors_required_1_20"] = math.ceil(Decimal(faculty_20) / Decimal(9))
+        facts["computed.assoc_prof_required_1_15"] = 2 * math.ceil(Decimal(faculty_15) / Decimal(9))
+        facts["computed.instructional_carpet_area_required_sqm"] = float(total_students_dec * Decimal("4.5"))
+
     for dt in DocumentType:
         facts[f"docs.{dt.value}.present"] = False
 
@@ -80,16 +109,20 @@ def build_facts(app: Application, docs: list[Document], records: dict[str, Any] 
         for key, value in (data.get("spatial") or {}).items():
             if isinstance(value, (int, float, str)):
                 facts[f"spatial.{key}"] = value
+
     for obj, count in infra.items():
         facts[f"infra.{obj}"] = count
 
     observed = facts.get("spatial.observed_footprint_sqm")
     coverage = facts.get("docs.building_plan.ground_coverage_sqm")
-    built_up, floors = facts.get("docs.building_plan.built_up_area_sqm"), facts.get("docs.building_plan.floors")
+    built_up = facts.get("docs.building_plan.built_up_area_sqm")
+    floors = facts.get("docs.building_plan.floors")
     plan_footprint = coverage or (built_up / floors if built_up and floors else None)
     if observed is not None and plan_footprint:
         facts["computed.plan_footprint_sqm"] = round(float(plan_footprint), 1)
-        facts["spatial.footprint_vs_plan_deviation_pct"] = round(abs(float(observed) - float(plan_footprint)) / float(plan_footprint) * 100, 2)
+        facts["spatial.footprint_vs_plan_deviation_pct"] = round(
+            abs(float(observed) - float(plan_footprint)) / float(plan_footprint) * 100, 2
+        )
 
     fac = facts.get("docs.faculty_list.total_faculty")
     if fac and facts.get("computed.total_students"):
@@ -116,8 +149,14 @@ def rule_applies(rule: ComplianceRule, app: Application) -> bool:
 
 # ------------------------------------------------------------ expressions
 
-_FUNCS = {"ceil": lambda x: Decimal(math.ceil(x)), "floor": lambda x: Decimal(math.floor(x)),
-          "min": min, "max": max, "round": lambda x, n=0: round(x, int(n)), "abs": abs}
+_FUNCS = {
+    "ceil": lambda x: Decimal(math.ceil(x)),
+    "floor": lambda x: Decimal(math.floor(x)),
+    "min": min,
+    "max": max,
+    "round": lambda x, n=0: round(x, int(n)),
+    "abs": abs,
+}
 
 
 def _dotted(node: ast.AST) -> str:
@@ -129,7 +168,7 @@ def _dotted(node: ast.AST) -> str:
 
 
 def evaluate_expr(expr: str, facts: dict[str, Any], trace: list[str]) -> Decimal:
-    """Evaluate a whitelisted arithmetic expression over facts with exact decimals."""
+    """Evaluate an exact arithmetic expression over facts with Decimal precision."""
     try:
         tree = ast.parse(expr, mode="eval")
     except SyntaxError as e:
@@ -176,8 +215,10 @@ def validate_expr(expr: str) -> None:
     """Static check used when admins save a rule."""
     tree = ast.parse(expr, mode="eval")
     for node in ast.walk(tree):
-        allowed = (ast.Expression, ast.Constant, ast.Name, ast.Attribute, ast.BinOp, ast.UnaryOp, ast.Call, ast.Load,
-                   ast.Add, ast.Sub, ast.Mult, ast.Div, ast.USub)
+        allowed = (
+            ast.Expression, ast.Constant, ast.Name, ast.Attribute, ast.BinOp, ast.UnaryOp, ast.Call, ast.Load,
+            ast.Add, ast.Sub, ast.Mult, ast.Div, ast.USub,
+        )
         if not isinstance(node, allowed):
             raise RuleError(f"Disallowed syntax: {type(node).__name__}")
         if isinstance(node, ast.Call) and not (isinstance(node.func, ast.Name) and node.func.id in _FUNCS):
@@ -241,40 +282,73 @@ def evaluate_rule(rule: ComplianceRule, facts: dict[str, Any], as_of: date | Non
     cond = rule.conditions or {}
     as_of = as_of or today()
     out: dict[str, Any] = {
-        "rule_code": rule.rule_code, "rule_version": rule.version, "title": rule.title,
-        "category": rule.category.value, "fix_hint": cond.get("fix_hint"), "doc_type": cond.get("requires_doc"),
-        "handbook_reference": rule.handbook_reference, "clause": cond.get("clause") or rule.description,
+        "rule_code": rule.rule_code,
+        "rule_version": rule.version,
+        "title": rule.title,
+        "category": rule.category.value,
+        "fix_hint": cond.get("fix_hint"),
+        "doc_type": cond.get("requires_doc"),
+        "handbook_reference": rule.handbook_reference or cond.get("handbook_reference"),
+        "clause": cond.get("clause") or rule.description,
         "trace": [],
     }
     trace: list[str] = out["trace"]
     req = cond.get("requires_doc")
     if req and not facts.get(f"docs.{req}.present"):
-        trace.append(f"Required document '{req}' not found among current uploads")
-        return {**out, "rag": AMBER, "kind": "missing_document", "actionable_by": "institution",
-                "message": f"Required document not submitted: {req.replace('_', ' ')}"}
+        trace.append(f"Required statutory document '{req}' not found among current uploads")
+        return {
+            **out,
+            "rag": AMBER,
+            "kind": "missing_document",
+            "actionable_by": "institution",
+            "message": f"Required document not submitted: {req.replace('_', ' ')}",
+        }
 
     check = cond.get("check")
     if not check:
-        return {**out, "rag": GREEN, "kind": "presence", "message": "Required document submitted",
-                "evidence": facts.get(f"docs.{req}.filename") if req else None}
+        return {
+            **out,
+            "rag": GREEN,
+            "kind": "presence",
+            "message": "Required document submitted",
+            "evidence": facts.get(f"docs.{req}.filename") if req else None,
+        }
 
     op = check.get("op")
     if op not in OPS:
-        return {**out, "rag": RED, "kind": "invalid_rule", "actionable_by": "officer", "message": f"Rule has unknown operator '{op}'"}
+        return {
+            **out,
+            "rag": RED,
+            "kind": "invalid_rule",
+            "actionable_by": "officer",
+            "message": f"Rule has unknown operator '{op}'",
+        }
     label = check.get("label") or check.get("fact") or check.get("expr", "value")
     fact_name = check.get("fact")
-    out.update({"fact": fact_name, "op": op,
-                "evidence": facts.get(f"docs.{req}.filename") if req else (fact_name or "").split(".")[0]})
+    out.update({
+        "fact": fact_name,
+        "op": op,
+        "evidence": facts.get(f"docs.{req}.filename") if req else (fact_name or "").split(".")[0],
+    })
     missing_mode = cond.get("on_missing_fact", "amber")
     try:
         actual = resolve({"expr": check["expr"]} if "expr" in check else {"fact": fact_name}, facts, trace)
-        expected = resolve(check.get("value"), facts, trace) if op not in ("exists", "is_true", "valid_on", "not_expired") else None
+        expected = (
+            resolve(check.get("value"), facts, trace)
+            if op not in ("exists", "is_true", "valid_on", "not_expired")
+            else None
+        )
     except KeyError as missing:
         if missing_mode == "skip":
             return {**out, "rag": NA, "kind": "missing_fact", "message": f"{label}: not applicable ({missing} unavailable)"}
-        trace.append(f"Value '{missing}' could not be read from the submission")
-        return {**out, "rag": RED if missing_mode == "red" else AMBER, "kind": "missing_fact",
-                "actionable_by": "institution", "message": f"{label}: could not be read from the submitted documents"}
+        trace.append(f"Value '{missing}' could not be extracted from the submission")
+        return {
+            **out,
+            "rag": RED if missing_mode == "red" else AMBER,
+            "kind": "missing_fact",
+            "actionable_by": "institution",
+            "message": f"{label}: could not be read from submitted documents",
+        }
     except RuleError as e:
         return {**out, "rag": AMBER, "kind": "type_error", "actionable_by": "institution", "message": f"{label}: {e}"}
 
@@ -284,10 +358,10 @@ def evaluate_rule(rule: ComplianceRule, facts: dict[str, Any], as_of: date | Non
         rag, message = _compare(op, actual.value, expected.value if expected else None, check, fact_name or "", label, as_of, trace)
     except RuleError as e:
         return {**out, "rag": AMBER, "kind": "type_error", "actionable_by": "institution", "message": f"{label}: {e}"}
+
     kind = "expired" if op in ("valid_on", "not_expired") and rag != GREEN else ("pass" if rag == GREEN else "bound_violation")
     actionable = None if rag == GREEN else ("institution" if kind == "expired" else "officer")
     if rag == RED and cond.get("fail_rag") == AMBER:
-        # Failures the institution itself must remedy (e.g. unpaid fee) are clarification items, not anomalies
         rag, actionable = AMBER, "institution"
     return {**out, "rag": rag, "kind": kind, "message": message, "actionable_by": actionable}
 
@@ -345,7 +419,7 @@ def _is_number(v: Any) -> bool:
 
 
 def infra_norms(rules: list[ComplianceRule], app: Application | None = None) -> list[dict[str, Any]]:
-    """Equipment minimums for the CV module, taken from active rules on infra.* facts."""
+    """Equipment minimums for the infrastructure inspection, taken from active rules on infra.* facts."""
     norms = []
     for r in rules:
         if not r.is_active or (app is not None and not rule_applies(r, app)):
@@ -354,6 +428,11 @@ def infra_norms(rules: list[ComplianceRule], app: Application | None = None) -> 
         fact = check.get("fact") or ""
         if fact.startswith("infra.") and check.get("op") in (">=", ">") and isinstance(check.get("value"), (int, float)):
             minimum = check["value"] + (1 if check["op"] == ">" else 0)
-            norms.append({"object": fact.split(".", 1)[1], "min": minimum, "rule_code": r.rule_code,
-                          "label": check.get("label") or r.title})
+            norms.append({
+                "object": fact.split(".", 1)[1],
+                "min": minimum,
+                "rule_code": r.rule_code,
+                "label": check.get("label") or r.title,
+                "handbook_reference": r.handbook_reference,
+            })
     return norms

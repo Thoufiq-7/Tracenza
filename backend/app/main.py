@@ -49,7 +49,7 @@ def init_db():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Starting Validex backend...")
+    logger.info("Starting Tracenza backend...")
     init_db()
     yield
 

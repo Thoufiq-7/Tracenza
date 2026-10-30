@@ -3,7 +3,7 @@
 from uuid import UUID
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
-from app.models.application import AIRecommendation, ApplicationCategory, ApplicationStatus
+from app.models.application import AIRecommendation, ApplicationCategory, ApplicationStatus, WorkflowStage
 from app.schemas.document import DocumentResponse
 from app.schemas.validation import ValidationResultResponse
 
@@ -20,6 +20,14 @@ class ApplicationDecision(BaseModel):
 
     status: ApplicationStatus
     verdict_notes: str | None = Field(default=None, max_length=1000)
+
+
+class ApplicationStageTransition(BaseModel):
+    """Officer stage transition request."""
+
+    stage: WorkflowStage
+    reason: str = Field(min_length=10, max_length=1000)
+    committee_notes: str | None = Field(default=None, max_length=1000)
 
 
 class DeficiencyNoticeRequest(BaseModel):
@@ -40,6 +48,8 @@ class ApplicationResponse(BaseModel):
     category: ApplicationCategory
     academic_year: str
     status: ApplicationStatus
+    stage: str = WorkflowStage.SCRUTINY.value
+    processing_stage: str | None = None
     risk_score: float
     ai_recommendation: AIRecommendation | None = None
     ai_summary: str | None = None

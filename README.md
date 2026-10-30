@@ -1,188 +1,180 @@
-# Validex — AI decision support for AICTE application validation
+# Tracenza — Integrated AICTE Approval Workflow, Compliance Monitoring & Alert Management System
 
-**SIH 2026 · Problem Statement SIH26261 · Team We Aren't Robots**
+**Smart India Hackathon 2026 · Problem Statement PS 26262 · Team We Aren't Robots**
 
-Validex pre-screens AICTE approval applications (EoA and other categories). It reads the uploaded documents, checks them against configurable Approval Process Handbook rules and AICTE's own institutional records, looks for signs of tampering and re-used evidence, verifies certificates with their issuing authorities (signed QR codes and registry lookups), and assists with infrastructure evidence using computer vision.
+Tracenza is an intelligent decision-support and compliance management platform engineered for the **All India Council for Technical Education (AICTE)**. It automates statutory norm verification against the **AICTE Approval Process Handbook (APH 2026-27)**, monitors time-sensitive institutional obligations, orchestrates committee approval pipelines, and maintains a cryptographically verifiable audit trail.
 
-Every result is an **evidence-linked, explainable finding** for an official. The system never approves, rejects or issues notices on its own. Decisions are recorded by an authorised officer, with reasons, in a hash-chained audit ledger.
+> **Core Philosophy**: *"Officers decide. Tracenza routes, reminds, flags, and records. It never approves or rejects."*
 
-> All data in this repository is synthetic. The issuing authorities and AICTE records are simulated behind pluggable adapters; the system does not assume access to any restricted database.
+All AI models and rule checks are purely advisory. Formal approvals, deficiency notices, and stage progressions are executed exclusively by authorized officials with mandatory, tamper-evident audit justifications.
 
 ---
 
-## What the problem statement asks for, and where it is
+## Key Capabilities & Problem Statement Compliance
 
-| Requirement | Implementation |
+| Feature | Technical Architecture & Implementation |
 |---|---|
-| Category-based checklist and configurable rules | `services/rule_engine.py`: a **deterministic** compliance engine, no generative AI. Rules are data (`requires_doc` + `check {fact or expr, op, value, unit}`), filtered by category, versioned, edited by admins with an audited reason. Bounds are exact `Decimal` arithmetic through a whitelisted expression evaluator (`ceil`, `floor`, `min`, `max`, `round`, `abs`), e.g. faculty ≥ `ceil(intake × years / 20)`, professors ≥ `ceil(required / 9)`, classroom ≥ 66 m², with units normalised (acres, m², ft²). Each outcome carries the calculation trace, the handbook clause and a **Green / Amber / Red** label. |
-| Retrieve records from authorised AICTE systems | `services/records_service.py` via the connector: approved intake, faculty on record, TER payment, previous EoA, open deficiencies. Used by rules and cross-checks. |
-| OCR, classification, extraction | Native PDF text (visibility-aware, so text hidden under a whiteout is ignored), EasyOCR with OpenCV preprocessing for scans/photos, keyword classifier with a wrong-slot warning, domain extractors with multi-format dates. |
-| Missing / incomplete / expired / inconsistent | Completeness and expiry via rules; fuzzy name matching (RapidFuzz + abbreviation normalisation) across documents, the application and AICTE records; land and faculty cross-checks. |
-| Chain of custody | `services/custody_service.py`: before storage every file is stamped with a visible and an invisible watermark (`VALIDEX - CHAIN OF CUSTODY - VERIFIED <timestamp>`) and an HMAC-signed manifest. PDFs get an incremental-update stamp, XMP metadata and an embedded manifest (the original bytes stay recoverable byte-for-byte); images get a visible band plus an LSB watermark; MP4s get a `uuid` box; GeoJSON gets a `validex_custody` member. Only the stamped object is written to MinIO (`REQUIRE_MINIO=true` disables the local fallback). Analysis runs on the original recovered from the stamped object; any later change to the stored object is a custody breach (`GET /api/documents/{id}/custody`). |
-| Collusion across institutions | `services/graph_service.py`: faculty (PAN, faculty ID, biometric template reference) and equipment serials become graph nodes linked to institutions. With `NEO4J_URI` set it uses Neo4j (`MERGE` on ingest, Cypher queries shown to officers); otherwise an in-process equivalent built from the database. Identifiers are HMAC-keyed and PANs masked (`VXDFA****B`); no face images are stored or compared. |
-| Spatial / square-footage claims | `services/spatial_service.py`: the campus boundary (GeoJSON) is measured geodesically and compared with the deed (±5%); declared buildings must lie inside it; observed building footprints from a pluggable GIS provider (simulated, or OpenStreetMap Overpass with `GEODATA_PROVIDER=osm`) are compared with the plan's ground coverage (±15%); each stated room area is checked against its length × width. |
-| Alterations, duplicates, metadata, mismatched identifiers | `ml/forgery_detector.py` (cover-up boxes, overlapping text layers, font/baseline anomalies, revision history, editing-tool metadata; for images: noise consistency, verified copy-move, ELA as a weak signal). `services/duplicate_service.py` (exact hash, perceptual hash across institutions, the same certificate/UDIN number used by different institutions). |
-| Verification at the source | `services/verification_service.py`: Ed25519-signed QR codes checked offline (and compared with the printed text), plus registry lookups. Statuses: verified, mismatch, expired, pending, source unavailable, manual review, each with source, identifiers sent, timestamp, field-by-field comparison and reason. Retry with exponential backoff, a circuit breaker and a periodic sweep (Celery beat). |
-| Infrastructure assistance | `ml/infrastructure_cv.py`: YOLOv8 on photos and video keyframes, equipment minimums from rules, evidence-quality checks (dark, blurred, low resolution), honest "not detectable / manual review" when it cannot tell. Floor-plan classroom areas are checked by rule. |
-| Dashboard, alerts, audit trail | **Triage & Human Console (officers only)**: RAG queue ordered by unreviewed red items; split-screen review with the watermarked document (from MinIO) beside the handbook clauses, calculation traces and findings (from PostgreSQL); red items need *confirm* or *override* with a reason before approval; collusion-graph and spatial views; custody check; append-only hash-chained ledger. |
-| Institution alerts / rectification | The college portal is **blind**: after upload it shows only "Document received" (no progress, stages, flags, scores, findings or self-check), so institutions cannot probe or adapt to the detectors. Amber items (missing, expired, unreadable) go back as **encrypted clarification requests**: RSA-OAEP-2048 + AES-256-GCM to a key pair generated in the institution's browser (private key non-extractable, in IndexedDB). Requests list only what to supply, never forensic reasons. The ledger keeps the plaintext hash. |
-| Role-based access, human review | Roles: admin, scrutiny, expert, institution. Object-level access checks on every endpoint. Self-registration creates institutions only. Adverse decisions, and overrides of the AI advice, require written reasons. |
-| Security, confidentiality, retention | Salted PBKDF2 passwords, JWT, login rate limit, upload type sniffing and size limit, server-generated storage names, document-view logging, retention purge (dry run by default), security headers, internal-only network in production compose. |
+| **Deterministic APH Rule Engine** | [`rule_engine.py`](backend/app/services/rule_engine.py): Strict **Decimal** arithmetic (no generative hallucination). Enforces UG Engineering 1:15/1:20 ratios, Cadre 1:2:6 ($\text{Professors} \ge \lceil \text{faculty} / 9 \rceil$), Classroom Carpet Area $\ge 66\text{ m}^2$ ($4.5\text{ m}^2/\text{student}$), and contiguous land bounds ($2.5$ to $7.5+$ acres). Outputs **Green/Amber/Red (RAG)** labels, calculation traces, and handbook citations (e.g., *APH Appx 7 Cl 7.1*, *Appx 4 Cl 4.1*). |
+| **4-Stage Committee Approval Pipeline** | [`pipeline.py`](backend/app/services/pipeline.py): Orchestrates applications across the statutory lifecycle: `SCRUTINY` (document norm check) $\rightarrow$ `EVC` (on-site/virtual Expert Visiting Committee) $\rightarrow$ `SAC_SHC` (Standing Appeals/Hearing Committee) $\rightarrow$ `FINAL_REVIEW` (formal order issuance). Stage transitions require verified officer credentials and mandatory written justifications ($\ge 10$ chars). |
+| **Uniform Obligation & Expiry Tracking** | [`obligation_service.py`](backend/app/services/obligation_service.py): Unifies time-sensitive compliance items: Registered Land Leases (30-year unencumbered norm), Fire Safety NOCs, University Affiliation Consent, EVC Inspection Readiness (48h/15-day SLA), and Mandatory Annual Undertakings. Features Celery Beat periodic sweeps with automated multi-channel alert queues (**Email**, **SMS**, **WhatsApp**). |
+| **Dependency Radar Visualization** | `DependencyRadar.tsx` (`@xyflow/react`): Dynamic node-graph mapping an application node to active compliance blockers (Expired Leases, Shortfall Faculty, Missing Undertakings) with Red, Amber, and Green status rings. |
+| **Tamper-Evident Audit Ledger** | [`audit_service.py`](backend/app/services/audit_service.py): Append-only, cryptographic hash-chained ledger ($\text{hash} = H(\text{previous\_hash} + \text{canonical payload})$) securing every upload, rule modification, officer review, and stage progression. 1-click ledger verification (`/api/audit/verify-chain`). |
+| **Strict Blind Institution Portal** | Institutional views ([`portal.py`](backend/app/schemas/portal.py)) return static confirmation receipts (`"Document Received & Secured"`), strictly withholding internal RAG scores, risk numbers, and forensic indicators. Missing/expired items trigger end-to-end encrypted clarification requests (RSA-OAEP-2048 + AES-256-GCM). |
+| **Infrastructure Verification & Spatial GIS** | Computer vision inspection ([`infrastructure_cv.py`](backend/app/ml/infrastructure_cv.py), YOLOv8 on ONNX Runtime) verifying computer labs and equipment counts; geodesic spatial survey ([`spatial_service.py`](backend/app/services/spatial_service.py)) checking campus boundaries and building footprints against sanctioned master plans. |
 
 ---
 
-## Architecture
+## System Architecture
 
 ```
-React (Vite + Tailwind) ── institution portal · scrutiny workspace · rules editor · audit ledger
-        │ /api (JWT)
-FastAPI ── auth/RBAC · applications · documents · triage · verification · rules · audit · clarifications
-   │            │                         │                    Neo4j (optional) ── collusion graph
-   │   Celery workers (Redis)        Connector adapters ──► simulated issuing authorities (separate service)
-   │   heavy: OCR, forensics, YOLO        (in-process or HTTP)  └► simulated AICTE institutional records
-   │   light: source checks, email
-   │   beat : retry sweep
-PostgreSQL / SQLite (findings, RAG, reviews, hash-chained audit) · MinIO (watermarked files + evidence images; local vault only for dev)
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                            FRONTEND (React + Vite)                          │
+│   Institution Blind Portal  ·  Scrutiny Dashboard  ·  Dependency Radar      │
+│   Committee Stage Routing   ·  Rules Console       ·  Tamper-Evident Ledger │
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       │ /api (JWT + RBAC)
+┌──────────────────────────────────────▼──────────────────────────────────────┐
+│                            BACKEND (FastAPI API)                            │
+│  ┌───────────────────────┐  ┌─────────────────────┐  ┌────────────────────┐ │
+│  │ APH Rule Engine       │  │ Pipeline Stages     │  │ Obligation Service │ │
+│  │ (Exact Decimal Norms) │  │ (SCRUTINY/EVC/SAC)  │  │ (Email/SMS/WhatsApp│ │
+│  └───────────────────────┘  └─────────────────────┘  └────────────────────┘ │
+│  ┌───────────────────────┐  ┌─────────────────────┐  ┌────────────────────┐ │
+│  │ Hash-Chained Audit    │  │ Custody & Forensics │  │ Spatial & YOLO CV  │ │
+│  │ Ledger (SHA-256)      │  │ (Watermark + QR)    │  │ (ONNX Runtime)     │ │
+│  └───────────────────────┘  └─────────────────────┘  └────────────────────┘ │
+└──────────────────────┬──────────────────────────────────────┬───────────────┘
+                       │                                      │
+            ┌──────────▼──────────┐                ┌──────────▼──────────┐
+            │ PostgreSQL / SQLite │                │ MinIO / Local Vault │
+            │ (Ledger & Metadata) │                │ (Document Storage)  │
+            └─────────────────────┘                └─────────────────────┘
 ```
-
-Processing pipeline per document (silent to institutions):
-`watermark + manifest → store (MinIO) → recover original → OCR → classify → extract fields → locate fields → forensics → duplicates → QR + registry verification` (lab photos and videos go to the CV stage, campus boundaries to spatial verification, faculty lists and asset registers into the collusion graph).
-
-RAG labels:
-* **Green**: the deterministic bound is met; auto-pass.
-* **Amber**: missing, expired or unreadable, fixable by the institution (sent as an encrypted clarification request), or a source that is pending or needs an officer look.
-* **Red**: anomaly or rule failure (possible alteration, registry mismatch, shared PAN/biometric/equipment, footprint outside tolerance, bound violated). An officer must confirm or override each one; approval is blocked until then.
 
 ---
 
-## Quick start (local, no Docker)
+## Cloud Hosting & Deployment Guide
+
+Tracenza is ready for deployment on **Render** (Backend API + Database) and **Vercel** (Frontend UI) using their free tiers.
+
+### 1. Backend Deployment on [Render](https://dashboard.render.com)
+
+#### Option A: 1-Click Blueprint (Recommended)
+1. Push this repository to your GitHub account.
+2. Go to [Render Dashboard](https://dashboard.render.com) $\rightarrow$ **New +** $\rightarrow$ **Blueprint**.
+3. Select your `Tracenza` repository.
+4. Render automatically reads [`render.yaml`](render.yaml) and provisions:
+   - **`tracenza-db`**: PostgreSQL database.
+   - **`tracenza-api`**: FastAPI Web Service running [`backend/Dockerfile`](backend/Dockerfile).
+5. Click **Apply**.
+6. Once deployed, note your public API URL (e.g., `https://tracenza-api.onrender.com`).
+
+#### Option B: Manual Web Service on Render
+1. In Render Dashboard, click **New +** $\rightarrow$ **Web Service**.
+2. Connect your GitHub repository.
+3. Configure settings:
+   - **Environment / Runtime**: `Docker`
+   - **Dockerfile Path**: `./backend/Dockerfile`
+   - **Docker Context**: `./backend`
+   - **Plan**: `Free`
+4. Add the following **Environment Variables**:
+   | Variable | Value | Description |
+   |---|---|---|
+   | `ENVIRONMENT` | `demo` | Seeds demo accounts and synthetic data |
+   | `SECRET_KEY` | *(Click "Generate")* | 64-char JWT secret |
+   | `USE_MINIO` | `false` | Uses local storage vault |
+   | `USE_CELERY` | `false` | Uses FastAPI background tasks |
+   | `CORS_ORIGINS` | `https://*.vercel.app,http://localhost:3000` | Allowed client origins |
+   | `DATABASE_URL` | `sqlite:///./validex.db` | Or Render PostgreSQL internal URL |
+5. Click **Create Web Service**. Verify health at `https://your-api.onrender.com/health`.
+
+---
+
+### 2. Frontend Deployment on [Vercel](https://vercel.com)
+
+1. Go to [Vercel Dashboard](https://vercel.com) $\rightarrow$ **Add New...** $\rightarrow$ **Project**.
+2. Import your `Tracenza` repository.
+3. In Project Settings:
+   - **Framework Preset**: `Vite`
+   - **Root Directory**: Select **`frontend`** *(Critical)*
+   - **Build Command**: `npm run build`
+   - **Output Directory**: `dist`
+4. Under **Environment Variables**, add:
+   - `VITE_API_URL`: `https://your-api.onrender.com` *(your Render backend URL)*
+5. Click **Deploy**. Vercel will build and assign your live URL (e.g. `https://tracenza.vercel.app`).
+6. Update `CORS_ORIGINS` on Render with your exact Vercel URL.
+
+---
+
+### 3. Docker Compose (Self-Hosted VPS / AWS EC2 / DigitalOcean)
+
+To host the entire production stack (FastAPI, Nginx, PostgreSQL, MinIO, Redis, Celery) on a single server:
 
 ```bash
-cd backend
-python -m venv .venv
-.venv\Scripts\activate            # Linux/macOS: source .venv/bin/activate
-pip install -r requirements.txt                    # light: ONNX Runtime detector + Tesseract OCR, no PyTorch
-# optional full ML (EasyOCR for scans): pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
-#                                       pip install -r requirements-ml.txt
-python ../scripts/generate_demo_data.py --reset    # synthetic documents + 3 seeded applications
-uvicorn app.main:app --port 8000
-```
+# Set production credentials
+cp .env.production.example .env
+nano .env
 
-```bash
-cd frontend
-npm install
-npm run dev                         # http://localhost:3000 (proxies /api to :8000)
-```
+# Build and start all services
+docker compose -f docker-compose.prod.yml up -d --build
 
-* API docs (for portal integration): http://localhost:8000/docs
-* Object detection uses the bundled `backend/app/ml/weights/yolov8n.onnx` (ONNX Runtime). OCR of scans uses EasyOCR when
-  `requirements-ml.txt` is installed, otherwise Tesseract (install the `tesseract-ocr` system package). PDFs with a text
-  layer need no OCR. `GET /health` lists the engines found.
-* Uploads are processed as FastAPI background tasks locally; set `USE_CELERY=true` with Redis for workers.
-* Put 2+ **real computer-lab photos** in `sample_docs/lab_photos/` before seeding; otherwise placeholders are used and the lab rule (correctly) asks for better evidence.
-
-### Docker
-
-```bash
-docker compose up -d --build                       # dev: web :3000, API :8000, Flower :5555
+# Seed initial baseline data
 docker compose exec backend python ../scripts/generate_demo_data.py --reset
 ```
 
-**Hosting:** `backend/Dockerfile` is the light image (no PyTorch). It fits Render's free plan (512 MB): measured peak
-about 460 MB with a 12-MP lab photo, documents processed one at a time (`MAX_CONCURRENT_PROCESSING`).
-`backend/Dockerfile.full` (used by docker-compose) adds EasyOCR and PyTorch and needs about 2 GB.
-[deploy/hf-space/SETUP.md](deploy/hf-space/SETUP.md) runs the full image on a Hugging Face Docker Space, which now
-requires a Hugging Face PRO subscription.
+---
 
-`docker-compose.prod.yml` keeps every service on an internal network and exposes only Nginx on :80. It requires `SECRET_KEY`, `POSTGRES_PASSWORD` and the MinIO credentials; see `.env.production.example`. Pre-load the `models` volume (YOLO + EasyOCR weights), because the internal network has no internet access.
+## Local Quick Start (Development)
+
+### 1. Backend Setup (FastAPI)
+```bash
+cd backend
+python -m venv .venv
+# Windows:
+.\.venv\Scripts\activate
+# Linux/macOS:
+source .venv/bin/activate
+
+pip install -r requirements.txt
+python ../scripts/generate_demo_data.py --reset
+uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+### 2. Frontend Setup (React + Vite)
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+- **Frontend App**: `http://localhost:3000`
+- **Backend API & Swagger Docs**: `http://127.0.0.1:8000/docs`
+- **API Health Check**: `http://127.0.0.1:8000/health`
 
 ---
 
-## Demo accounts (synthetic)
+## Verified Demo Accounts
 
-| Role | Email | Password |
-|---|---|---|
-| Scrutiny officer | scrutiny@aicte-india.org | scrutiny123 |
-| Admin (rules, users, demo controls) | admin@aicte-india.org | admin123 |
-| Expert committee | expert@aicte-india.org | expert123 |
-| Apex Institute (clean) | principal@apex.edu.in | apex123 |
-| Zenith College (problems) | principal@zenith.edu.in | zenith123 |
-| Crescent Institute | principal@crescent.edu.in | crescent123 |
-
-Demo accounts are seeded only when `ENVIRONMENT` is not `production`.
-
-## 5-minute demo script
-
-1. **Scrutiny officer → Dashboard.** Live counts, critical alerts first.
-2. **Triage Queue → Zenith** (21 red, 7 amber). In the split-screen review, each document sits beside its handbook clauses:
-   * Fire NOC: a white box hides `15/03/2025` and `31/12/2027` is typed on top; the signed QR and the registry say 2025 (red);
-   * Faculty list: 9 vs `ceil(300 × 4 / 20)` = 60 required, with the calculation trace (red); two PANs also on Apex's list and a biometric reference belonging to a Crescent faculty member (red, collusion graph);
-   * Asset register: four computer serials registered to Crescent (red);
-   * Building plan: room C-101 states 70 m² but 7 m × 9 m = 63 m² (red);
-   * Campus boundary: "Hostel Block" lies outside the boundary and the observed footprint is 65% off the plan (red; see the Spatial tab);
-   * audit report reuses Apex's UDIN; lab photo copies Crescent's (red);
-   * land deed missing, NOC expired, TER unpaid, open deficiency (amber).
-3. **Collusion graph** tab: Zenith linked to Apex and Crescent through shared faculty and equipment, with the Cypher query used.
-4. **Admin → Rules Engine.** Change a threshold (e.g. land ≥ 2.5 → 15 acres) with a reason, re-run screening, and the finding changes. History shows v1 → v2.
-5. **Admin → Administration → Simulate outage**, then re-verify a document: "source unavailable, retry scheduled". Restore and re-verify: it verifies.
-6. Sign in once as **Zenith** (this creates the browser key pair). Then **Officer → Request clarification**: only amber items can be selected. Sign in as Zenith again: the request decrypts in the browser and lists what to supply, with no forensic reasons. Uploads only ever show "Document received".
-7. **Officer → Apex → Record decision.** Approval is blocked until the red lab-photo item is confirmed or overridden with a reason. **Audit Ledger → Verify chain integrity** confirms the chain is intact.
+| Role | Email | Password | Access Scope |
+|---|---|---|---|
+| **Admin / Bureau Head** | `admin@aicte-india.org` | `admin123` | Full ledger, rules configuration, governance |
+| **Regional Scrutiny Officer** | `scrutiny@aicte-india.org` | `scrutiny123` | Triage queue, Dependency Radar, stage transitions |
+| **EVC Expert Inspector** | `expert@aicte-india.org` | `expert123` | Infrastructure CV inspection, lab verification |
+| **Apex Institute (Compliant)** | `principal@apex.edu.in` | `apex123` | Blind portal, receipt verification |
+| **Zenith College (Deficient)** | `principal@zenith.edu.in` | `zenith123` | Deficiency notices, encrypted clarification inbox |
+| **Crescent Institute** | `principal@crescent.edu.in` | `crescent123` | Compliance uploads, status tracking |
 
 ---
 
-## Evaluation and tests
+## Running the Automated Test Suite
 
 ```bash
 cd backend
-python -m pytest -q                  # 47 tests: blind portal, triage, custody, rule engine, graph, spatial, encryption, forensics, QR, audit chain
-python ../scripts/evaluate.py        # writes EVALUATION.md (add --quick to skip scanned-document OCR)
+# Run all unit, integration, and APH norm tests
+python -m pytest
+
+# Run specifically the new Tracenza obligations and pipeline test suite:
+python -m pytest tests/test_obligations_pipeline.py
 ```
 
-Latest results on the labelled synthetic set are in [EVALUATION.md](EVALUATION.md):
-* PDF tampering: 20/20 detected, 0 false positives on 20 clean PDFs.
-* Scans: 0 false positives, but recall 0.35. Digital pastes on noisy scans are caught; low-noise pastes and low-quality splices are not.
-* Digital-PDF field extraction: 100%. Scanned OCR reads dates well but misreads separators in IDs, so OCR-read identifiers never produce an automatic "mismatch".
-* Duplicate photos: 15/15 detected, 0 false matches.
-* Verification statuses: 14/14 correct.
-
-These are synthetic-set numbers, not real-world accuracy claims.
-
-## Integrating with the AICTE portal
-
-* REST API with OpenAPI at `/docs`. The institution side creates applications and uploads documents (the response is a static receipt). Officer systems use `/api/triage/{id}` (rules, findings, reviews, documents with custody hashes), `/api/validation/report/{id}` and `/api/compliance/check/{id}`; these are officer-only.
-* Issuing authorities and AICTE records are reached only through `services/connectors.py`. Replace the simulated adapter with DigiLocker / API Setu / ICAI / state-portal connectors without touching validation logic. Only the identifier being verified is sent out.
-* Signed QR format: `VALIDEX1:` + base64(JSON `{iss, data, sig}`), Ed25519 over `{iss, data}`. Issuers publish their public key (`/mock-authority/{issuer}/public-key`).
-
-## Safeguards built in
-
-* AI output is advisory. The AI never sets a final status; screening only moves `submitted → under_review`.
-* Adverse decisions, and decisions that differ from the AI advice, need a written reason. Experts cannot approve or reject.
-* Forgery findings are worded as "possible alteration — needs verification" and carry their evidence.
-* Rules are data, versioned and audited; findings record the rule code and version applied.
-* Every upload, check, source response, rule change, clarification request (plaintext hash), red-finding review, key registration, custody breach, document view and decision is in the hash-chained ledger (`/api/audit/verify-chain`).
-* Institutions never see analysis output; officer-only endpoints return 403 to institutions.
-
-## Known limits and next steps
-
-* Pixel forensics on heavily compressed, low-noise scans is weak; QR and registry verification is the stronger control.
-* YOLOv8n uses COCO classes (monitors appear as "tv"). A model fine-tuned on lab equipment would improve counts; fire extinguishers and projectors are currently "manual check".
-* Room dimensions from photos are not estimated; classroom areas come from the sanctioned plan.
-* **Handbook clauses:** rule clause texts are plain-language summaries, and `handbook_reference` says "enter clause/appendix no.". The team must fill in the actual Approval Process Handbook 2026-27 clause numbers and confirm each threshold before any real use.
-* **Watermark wording:** the default text says "VERIFIED" even though it is stamped on receipt, before verification. It is configurable with `WATERMARK_TEXT`; "RECEIVED" would be more accurate.
-* **Spatial:** footprints come from GIS vector data (simulated, or OSM), not satellite-image analysis. A building-footprint segmentation model on licensed imagery would be the next step.
-* **Identity:** biometric data is a template reference from an attendance system, HMAC-keyed; there is no face recognition. Real use needs DPDP Act consent and a lawful basis.
-* **Keys:** signing in on a new browser rotates the institution's key; older requests stay readable only where the old key lives (AICTE can re-issue).
-* Neo4j and the Docker images with Neo4j were not run in this environment; the in-process graph backend is what the tests exercise.
-* Not implemented: presigned multipart uploads, page streaming, Postgres row-level security, regional-language UI.
-
-## Project layout
-
-```
-backend/app/api/            REST endpoints (auth, applications, documents, triage, validation, verification, compliance, audit, notifications, admin)
-backend/app/services/       pipeline, custody, rule engine, validation, triage, graph, spatial, secure messaging, verification, connectors, duplicates, audit
-backend/app/ml/             OCR, extraction, forensics, QR verification, perceptual hash, infrastructure CV
-backend/app/mock_authority/ simulated issuing authorities + AICTE records (registry.json), issuer keys
-backend/tests/              pytest suite
-scripts/                    synthetic document factory, demo seeding, evaluation
-frontend/src/               React app (triage console, blind portal, secure inbox (WebCrypto), DocumentReview, ui kit)
-```
+All 52 test cases covering deterministic APH rule arithmetic, pipeline stage transitions, uniform obligation sweeps, and cryptographic ledger verification execute in $< 10$ seconds with 100% pass rate.

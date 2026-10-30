@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
     # App
-    APP_NAME: str = "Validex"
+    APP_NAME: str = "Tracenza"
     ENVIRONMENT: str = "development"
     DEBUG: bool = False
     CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173"

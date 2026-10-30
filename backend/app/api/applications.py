@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.dependencies import get_application_for_user, get_current_user, is_official, require_official, require_role
-from app.models.application import AIRecommendation, Application, ApplicationCategory, ApplicationStatus
+from app.models.application import AIRecommendation, Application, ApplicationCategory, ApplicationStatus, WorkflowStage
 from app.models.document import DocumentStatus
 from app.models.user import User, UserRole
 from app.schemas.application import (
@@ -41,29 +41,47 @@ def _new_number(db: Session) -> str:
 
 
 @router.post("", response_model=PortalApplication, status_code=status.HTTP_201_CREATED)
-def create_application(app_in: ApplicationCreate, current_user: Annotated[User, Depends(require_institution)],
-                       db: Annotated[Session, Depends(get_db)]):
+def create_application(
+    app_in: ApplicationCreate,
+    current_user: Annotated[User, Depends(require_institution)],
+    db: Annotated[Session, Depends(get_db)],
+):
     """Institution starts a draft application. Officials do not see drafts until submitted."""
     app = Application(
-        application_number=_new_number(db), institution_id=current_user.id,
+        application_number=_new_number(db),
+        institution_id=current_user.id,
         institution_name=current_user.institution_name or current_user.full_name,
-        permanent_id=app_in.permanent_id, requested_intake=app_in.requested_intake,
-        category=app_in.category, academic_year=app_in.academic_year, status=ApplicationStatus.DRAFT,
+        permanent_id=app_in.permanent_id,
+        requested_intake=app_in.requested_intake,
+        category=app_in.category,
+        academic_year=app_in.academic_year,
+        status=ApplicationStatus.DRAFT,
+        stage=WorkflowStage.SCRUTINY.value,
         ai_recommendation=AIRecommendation.PENDING,
     )
     db.add(app)
     db.commit()
     db.refresh(app)
-    audit_service.log_event(db=db, action="APPLICATION_CREATED", user_id=current_user.id, application_id=app.id,
-                            details={"application_number": app.application_number, "category": app.category.value})
+    audit_service.log_event(
+        db=db,
+        action="APPLICATION_CREATED",
+        user_id=current_user.id,
+        application_id=app.id,
+        details={"application_number": app.application_number, "category": app.category.value},
+    )
     return portal_application(app, compliance_service.checklist(db, app))
 
 
 @router.get("", response_model=list[ApplicationResponse] | list[PortalApplication])
 def list_applications(
-    db: Annotated[Session, Depends(get_db)], current_user: Annotated[User, Depends(get_current_user)],
-    status: ApplicationStatus | None = Query(None), category: ApplicationCategory | None = Query(None),
-    search: str | None = Query(None, max_length=100), skip: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=200),
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    status: ApplicationStatus | None = Query(None),
+    stage: str | None = Query(None),
+    category: ApplicationCategory | None = Query(None),
+    search: str | None = Query(None, max_length=100),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
 ):
     query = db.query(Application)
     if current_user.role == UserRole.INSTITUTION:
@@ -72,6 +90,8 @@ def list_applications(
         query = query.filter(Application.status != ApplicationStatus.DRAFT)
     if status:
         query = query.filter(Application.status == status)
+    if stage:
+        query = query.filter(Application.stage == stage)
     if category:
         query = query.filter(Application.category == category)
     if search:
@@ -84,8 +104,11 @@ def list_applications(
 
 
 @router.get("/{app_id}", response_model=ApplicationDetailResponse | PortalApplication)
-def get_application(app_id: uuid.UUID, db: Annotated[Session, Depends(get_db)],
-                    current_user: Annotated[User, Depends(get_current_user)]):
+def get_application(
+    app_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+):
     app = get_application_for_user(db, app_id, current_user)
     if not is_official(current_user):
         return portal_application(app, compliance_service.checklist(db, app))
@@ -105,23 +128,35 @@ def get_application(app_id: uuid.UUID, db: Annotated[Session, Depends(get_db)],
 
 
 @router.patch("/{app_id}", response_model=PortalApplication)
-def update_draft(app_id: uuid.UUID, app_in: ApplicationCreate, db: Annotated[Session, Depends(get_db)],
-                 current_user: Annotated[User, Depends(require_institution)]):
+def update_draft(
+    app_id: uuid.UUID,
+    app_in: ApplicationCreate,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_institution)],
+):
     app = get_application_for_user(db, app_id, current_user)
     if app.status not in EDITABLE:
         raise HTTPException(status_code=409, detail="Application can only be edited while in draft or rectification")
     app.permanent_id, app.requested_intake = app_in.permanent_id, app_in.requested_intake
     app.category, app.academic_year = app_in.category, app_in.academic_year
     db.commit()
-    audit_service.log_event(db=db, action="APPLICATION_EDITED", user_id=current_user.id, application_id=app.id,
-                            details=app_in.model_dump(mode="json"))
+    audit_service.log_event(
+        db=db,
+        action="APPLICATION_EDITED",
+        user_id=current_user.id,
+        application_id=app.id,
+        details=app_in.model_dump(mode="json"),
+    )
     return portal_application(app, compliance_service.checklist(db, app))
 
 
 @router.post("/{app_id}/submit", response_model=PortalApplication)
-def submit_application(app_id: uuid.UUID, db: Annotated[Session, Depends(get_db)],
-                       current_user: Annotated[User, Depends(require_institution)]):
-    """Submit (or resubmit after rectification). Runs AI pre-screening for the official queue."""
+def submit_application(
+    app_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_institution)],
+):
+    """Submit (or resubmit after rectification). Runs deterministic APH rule pre-screening for the official queue."""
     app = get_application_for_user(db, app_id, current_user)
     if app.status not in EDITABLE:
         raise HTTPException(status_code=409, detail=f"Cannot submit an application in status '{app.status.value}'")
@@ -129,34 +164,50 @@ def submit_application(app_id: uuid.UUID, db: Annotated[Session, Depends(get_db)
         raise HTTPException(status_code=409, detail="Documents are still being received; please submit again in a minute")
     previous = app.status
     app.status = ApplicationStatus.SUBMITTED
+    app.stage = WorkflowStage.SCRUTINY.value
     app.submitted_at = datetime.now(timezone.utc)
     db.commit()
-    audit_service.log_event(db=db, action="APPLICATION_SUBMITTED" if previous == ApplicationStatus.DRAFT else "APPLICATION_RESUBMITTED",
-                            user_id=current_user.id, application_id=app.id, details={"from": previous.value})
+    audit_service.log_event(
+        db=db,
+        action="APPLICATION_SUBMITTED" if previous == ApplicationStatus.DRAFT else "APPLICATION_RESUBMITTED",
+        user_id=current_user.id,
+        application_id=app.id,
+        details={"from": previous.value, "stage": app.stage},
+    )
     validation_service.validate_application(db, app.id, user_id=current_user.id)
     db.refresh(app)
     return portal_application(app, compliance_service.checklist(db, app))
 
 
 @router.post("/{app_id}/decision", response_model=ApplicationResponse)
-def record_decision(app_id: uuid.UUID, decision: ApplicationDecision, db: Annotated[Session, Depends(get_db)],
-                    current_user: Annotated[User, Depends(require_official)]):
+def record_decision(
+    app_id: uuid.UUID,
+    decision: ApplicationDecision,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_official)],
+):
     """Official decision. The AI recommendation is advisory: overriding it, or any adverse decision,
-    requires a written reason that is stored in the audit ledger."""
+    requires a written reason that is stored in the audit ledger.
+    Philosophy: 'Officers decide. Tracenza routes, reminds, flags, and records. It never approves or rejects.'
+    """
     app = get_application_for_user(db, app_id, current_user)
     if app.status == ApplicationStatus.DRAFT or decision.status in (ApplicationStatus.DRAFT, ApplicationStatus.SUBMITTED):
         raise HTTPException(status_code=409, detail="Invalid status transition")
     notes = (decision.verdict_notes or "").strip()
     ai_adverse = app.ai_recommendation in (AIRecommendation.DEFICIENCY, AIRecommendation.INSPECTION)
     override = (decision.status == ApplicationStatus.APPROVED and ai_adverse) or (
-        decision.status in ADVERSE and app.ai_recommendation == AIRecommendation.FORWARD)
+        decision.status in ADVERSE and app.ai_recommendation == AIRecommendation.FORWARD
+    )
     if (decision.status in ADVERSE or override) and len(notes) < 10:
-        raise HTTPException(status_code=422, detail="A written reason (at least 10 characters) is required for adverse "
-                                                    "decisions and for decisions that differ from the AI recommendation")
+        raise HTTPException(
+            status_code=422,
+            detail="A written reason (at least 10 characters) is required for adverse decisions and for decisions that differ from the recommendation",
+        )
     if decision.status in (ApplicationStatus.APPROVED, ApplicationStatus.REJECTED) and current_user.role == UserRole.EXPERT:
         raise HTTPException(status_code=403, detail="Final approval or rejection requires a scrutiny officer or admin")
     if decision.status == ApplicationStatus.APPROVED and any(
-            d.status in (DocumentStatus.PENDING, DocumentStatus.PROCESSING) for d in app.documents if d.is_current):
+        d.status in (DocumentStatus.PENDING, DocumentStatus.PROCESSING) for d in app.documents if d.is_current
+    ):
         raise HTTPException(status_code=409, detail="Documents are still being processed")
     if decision.status in (ApplicationStatus.APPROVED, ApplicationStatus.VERIFIED):
         from app.services.triage_service import approval_blockers
@@ -166,22 +217,37 @@ def record_decision(app_id: uuid.UUID, decision: ApplicationDecision, db: Annota
 
     old = app.status
     app.status = decision.status
+    if decision.status in (ApplicationStatus.APPROVED, ApplicationStatus.REJECTED):
+        app.stage = WorkflowStage.FINAL_REVIEW.value
     app.overall_verdict = notes or app.overall_verdict
     app.decided_by, app.decided_at = current_user.id, datetime.now(timezone.utc)
     db.commit()
     db.refresh(app)
     audit_service.log_event(
-        db=db, action="APPLICATION_DECISION", user_id=current_user.id, application_id=app.id,
-        details={"from": old.value, "to": app.status.value, "notes": notes,
-                 "ai_recommendation": app.ai_recommendation.value if app.ai_recommendation else None,
-                 "ai_risk_score": app.risk_score, "overrides_ai": override},
+        db=db,
+        action="APPLICATION_DECISION",
+        user_id=current_user.id,
+        application_id=app.id,
+        details={
+            "from": old.value,
+            "to": app.status.value,
+            "stage": app.stage,
+            "notes": notes,
+            "ai_recommendation": app.ai_recommendation.value if app.ai_recommendation else None,
+            "ai_risk_score": app.risk_score,
+            "overrides_ai": override,
+        },
     )
     return app
 
 
 @router.post("/{app_id}/clarification-request", response_model=NotificationResponse, status_code=201)
-def request_clarification(app_id: uuid.UUID, body: DeficiencyNoticeRequest, db: Annotated[Session, Depends(get_db)],
-                          current_user: Annotated[User, Depends(require_official)]):
+def request_clarification(
+    app_id: uuid.UUID,
+    body: DeficiencyNoticeRequest,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_official)],
+):
     """Send AMBER items (missing / expired / unreadable) to the institution as an encrypted request.
     RED anomalies are never sent; officers resolve them in the console."""
     app = get_application_for_user(db, app_id, current_user)
@@ -190,8 +256,14 @@ def request_clarification(app_id: uuid.UUID, body: DeficiencyNoticeRequest, db: 
     notice = notification_service.issue_clarification(db, app, current_user, body.notes, body.due_days, body.finding_ids)
     old = app.status
     app.status = ApplicationStatus.DEFICIENCY_FOUND
+    app.stage = WorkflowStage.SAC_SHC.value
     app.decided_by, app.decided_at = current_user.id, datetime.now(timezone.utc)
     db.commit()
-    audit_service.log_event(db=db, action="APPLICATION_DECISION", user_id=current_user.id, application_id=app.id,
-                            details={"from": old.value, "to": app.status.value, "clarification_id": str(notice.id)})
+    audit_service.log_event(
+        db=db,
+        action="APPLICATION_DECISION",
+        user_id=current_user.id,
+        application_id=app.id,
+        details={"from": old.value, "to": app.status.value, "stage": app.stage, "clarification_id": str(notice.id)},
+    )
     return notice

@@ -25,7 +25,9 @@ import type {
   GraphView,
 } from '../types';
 
-const api = axios.create({ baseURL: import.meta.env.VITE_API_URL || '/api' });
+const rawBase = (import.meta.env.VITE_API_URL as string) || '/api';
+const baseURL = rawBase.endsWith('/api') ? rawBase : (rawBase === '/api' ? '/api' : rawBase.replace(/\/+$/, '') + '/api');
+const api = axios.create({ baseURL });
 
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('aicte_token');

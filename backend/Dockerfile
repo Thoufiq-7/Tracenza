@@ -13,8 +13,8 @@ COPY requirements.txt .
 RUN pip install -r requirements.txt
 
 COPY . .
-RUN useradd --create-home validex && mkdir -p storage_vault ml_models && chown -R validex /app
-USER validex
+RUN useradd --create-home tracenza && mkdir -p storage_vault ml_models && chown -R tracenza /app
+USER tracenza
 
 EXPOSE 8000
 CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

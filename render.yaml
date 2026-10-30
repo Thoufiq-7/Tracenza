@@ -1,8 +1,9 @@
-# Hosted demo on Render (synthetic data only). ENVIRONMENT=demo seeds the demo accounts;
-# use ENVIRONMENT=production for a real deployment (no demo accounts, SECRET_KEY mandatory).
+# Hosted demo on Render for Tracenza (AICTE Approval Workflow & Compliance Monitoring).
+# ENVIRONMENT=demo seeds the demo accounts (Admin, Scrutiny Officer, Expert, Institutions);
+# use ENVIRONMENT=production for formal deployment (no synthetic demo accounts).
 services:
   - type: web
-    name: validex-api
+    name: tracenza-api
     runtime: docker
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
@@ -15,16 +16,18 @@ services:
         generateValue: true
       - key: USE_MINIO
         value: "false"
+      - key: USE_CELERY
+        value: "false"
       - key: CORS_ORIGINS
-        value: https://validex-two.vercel.app
+        value: "https://tracenza.vercel.app,http://localhost:3000,http://localhost:5173"
       - key: DATABASE_URL
         fromDatabase:
-          name: validex-db
+          name: tracenza-db
           property: connectionString
 
 databases:
-  - name: validex-db
-    databaseName: aicte_validation
+  - name: tracenza-db
+    databaseName: tracenza_compliance
     user: aicte
     plan: free
     region: singapore

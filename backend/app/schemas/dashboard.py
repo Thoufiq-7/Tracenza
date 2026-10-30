@@ -18,6 +18,11 @@ class DashboardStatsResponse(BaseModel):
     pending_source_verifications: int
     avg_processing_seconds_per_document: float | None
     overdue_rectifications: int
+    # AICTE Workflow Pipeline & Compliance KPIs
+    pending_scrutiny: int = 0
+    evc_pending: int = 0
+    overdue_obligations: int = 0
+    stage_ageing_avg_days: float = 0.0
 
 
 class RiskDistributionItem(BaseModel):

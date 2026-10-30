@@ -17,11 +17,17 @@ router = APIRouter(prefix="/audit", tags=["Audit Trail & Governance"])
 def _serialize(log: AuditLog, users: dict) -> dict:
     u = users.get(log.user_id)
     return {
-        "id": str(log.id), "action": log.action, "details": log.details, "ip_address": log.ip_address,
-        "created_at": log.created_at, "user_id": str(log.user_id) if log.user_id else None,
-        "actor": u.full_name if u else "Automated check", "actor_role": log.actor_role,
+        "id": str(log.id),
+        "action": log.action,
+        "details": log.details,
+        "ip_address": log.ip_address,
+        "created_at": log.created_at,
+        "user_id": str(log.user_id) if log.user_id else None,
+        "actor": u.full_name if u else "Automated check",
+        "actor_role": log.actor_role,
         "application_id": str(log.application_id) if log.application_id else None,
-        "entry_hash": log.entry_hash, "prev_hash": log.prev_hash,
+        "entry_hash": log.entry_hash,
+        "prev_hash": log.prev_hash,
     }
 
 
@@ -31,8 +37,12 @@ def _users(db: Session, logs: list[AuditLog]) -> dict:
 
 
 @router.get("/system/recent")
-def get_system_audit_trail(db: Annotated[Session, Depends(get_db)], current_user: Annotated[User, Depends(require_official)],
-                           limit: int = Query(100, ge=1, le=500), action: str | None = None):
+def get_system_audit_trail(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_official)],
+    limit: int = Query(100, ge=1, le=500),
+    action: str | None = None,
+):
     q = db.query(AuditLog)
     if action:
         q = q.filter(AuditLog.action == action)
@@ -42,15 +52,19 @@ def get_system_audit_trail(db: Annotated[Session, Depends(get_db)], current_user
 
 
 @router.get("/verify-chain")
+@router.get("/verify")
 def verify_chain(db: Annotated[Session, Depends(get_db)], current_user: Annotated[User, Depends(require_official)]):
     """Recompute the hash chain to prove no audit entry was edited, deleted or inserted."""
     return audit_service.verify_chain(db)
 
 
 @router.get("/{app_id}")
-def get_application_audit_trail(app_id: uuid.UUID, db: Annotated[Session, Depends(get_db)],
-                                current_user: Annotated[User, Depends(require_official)]):
+def get_application_audit_trail(
+    app_id: uuid.UUID,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_official)],
+):
     app = get_application_for_user(db, app_id, current_user)
-    logs = audit_service.get_application_logs(db=db, application_id=app.id)
+    logs = audit_service.get_application_logs(db, app.id)
     users = _users(db, logs)
     return [_serialize(l, users) for l in logs]
