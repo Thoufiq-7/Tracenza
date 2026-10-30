@@ -1,0 +1,11 @@
+{
+  "name": "tracenza",
+  "version": "2.1.0",
+  "private": true,
+  "description": "Tracenza — AICTE Approval Workflow & Compliance Monitoring (SIH 2026)",
+  "scripts": {
+    "build": "npm --prefix frontend run build",
+    "dev": "npm --prefix frontend run dev"
+  }
+}
+

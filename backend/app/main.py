@@ -1,6 +1,7 @@
 """FastAPI application entrypoint for the AICTE validation platform (Validex)."""
 
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -33,7 +34,8 @@ def init_db():
     sync_schema()
     db = SessionLocal()
     try:
-        if not settings.is_production:
+        seed_demo = os.getenv("SEED_DEMO", "true").lower() in ("true", "1", "yes")
+        if seed_demo or not settings.is_production:
             for email, password, name, role, inst in DEMO_USERS:
                 user = db.query(User).filter(User.email == email).first()
                 if user is None:
@@ -68,6 +70,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
+    allow_origin_regex=r"^https://.*(\.vercel\.app|\.onrender\.com)$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -25,9 +25,33 @@ import type {
   GraphView,
 } from '../types';
 
-const rawBase = (import.meta.env.VITE_API_URL as string) || '/api';
+const getRawApiBase = (): string => {
+  if (typeof window !== 'undefined') {
+    const custom = localStorage.getItem('tracenza_api_url');
+    if (custom && custom.trim()) return custom.trim();
+  }
+  return ((import.meta.env.VITE_API_URL as string) || '').trim() || '/api';
+};
+
+export const getActiveApiUrl = (): string => getRawApiBase();
+
+export const setCustomApiUrl = (url?: string | null): void => {
+  if (typeof window !== 'undefined') {
+    if (url && url.trim()) {
+      localStorage.setItem('tracenza_api_url', url.trim());
+    } else {
+      localStorage.removeItem('tracenza_api_url');
+    }
+    window.location.reload();
+  }
+};
+
+const rawBase = getRawApiBase();
 const baseURL = rawBase.endsWith('/api') ? rawBase : (rawBase === '/api' ? '/api' : rawBase.replace(/\/+$/, '') + '/api');
-const api = axios.create({ baseURL });
+const api = axios.create({
+  baseURL,
+  timeout: 60000,
+});
 
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('aicte_token');
@@ -51,8 +75,15 @@ export const errorMessage = (err: any): string => {
   const detail = err?.response?.data?.detail;
   if (typeof detail === 'string') return detail;
   if (Array.isArray(detail)) return detail.map((d) => d.msg).join('; ');
+  if (err?.code === 'ECONNABORTED' || err?.message?.includes('timeout')) {
+    return 'Connection timed out: Render backend may be waking up from sleep (cold start). Please retry in 20-30 seconds.';
+  }
   if (err?.message === 'Network Error' || err?.code === 'ERR_NETWORK') {
-    return 'Network Error: Cannot connect to Tracenza backend API. Ensure the backend server is running on http://127.0.0.1:8000.';
+    const isVercel = typeof window !== 'undefined' && window.location.hostname.includes('vercel.app');
+    if (isVercel && (baseURL === '/api' || !import.meta.env.VITE_API_URL)) {
+      return 'Network Error: Backend API URL not configured on Vercel. Connect your Render URL below.';
+    }
+    return 'Network Error: Cannot connect to Tracenza backend API. Ensure the backend is running and awake.';
   }
   return err?.message || 'Request failed';
 };

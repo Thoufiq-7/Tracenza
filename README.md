@@ -96,13 +96,13 @@ Tracenza is ready for deployment on **Render** (Backend API + Database) and **Ve
 2. Import your `Tracenza` repository.
 3. In Project Settings:
    - **Framework Preset**: `Vite`
-   - **Root Directory**: Select **`frontend`** *(Critical)*
+   - **Root Directory**: Select **`frontend`** *(or leave default `.` as the root `vercel.json` will auto-build `frontend`)*
    - **Build Command**: `npm run build`
    - **Output Directory**: `dist`
 4. Under **Environment Variables**, add:
    - `VITE_API_URL`: `https://your-api.onrender.com` *(your Render backend URL)*
 5. Click **Deploy**. Vercel will build and assign your live URL (e.g. `https://tracenza.vercel.app`).
-6. Update `CORS_ORIGINS` on Render with your exact Vercel URL.
+6. **Instant UI Connect (Fallback)**: If you deployed without setting `VITE_API_URL`, the Tracenza sign-in page displays an on-screen connection prompt where you can paste your Render URL and connect immediately without waiting for a redeploy.
 
 ---
 

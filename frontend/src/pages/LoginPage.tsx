@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
-import { Cpu, ShieldCheck, Building2, UserCog } from 'lucide-react';
+import { Cpu, ShieldCheck, Building2, UserCog, Globe, Link2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { authApi, errorMessage } from '../api/client';
+import { authApi, errorMessage, getActiveApiUrl, setCustomApiUrl } from '../api/client';
 import { Button } from '../components/ui';
 
 // Synthetic demo accounts (seeded only outside production)
@@ -29,6 +29,13 @@ export const LoginPage: React.FC = () => {
   const [institution, setInstitution] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const activeApi = getActiveApiUrl();
+  const [showConfig, setShowConfig] = useState(false);
+  const [customUrlInput, setCustomUrlInput] = useState(activeApi === '/api' ? '' : activeApi);
+  const isRemoteWithoutApi = typeof window !== 'undefined' &&
+    window.location.hostname !== 'localhost' &&
+    window.location.hostname !== '127.0.0.1' &&
+    activeApi === '/api';
 
   if (user) return <Navigate to="/" replace />;
 
@@ -81,6 +88,34 @@ export const LoginPage: React.FC = () => {
             ))}
           </div>
 
+          {isRemoteWithoutApi && (
+            <div className="mb-4 p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs">
+              <div className="flex items-center gap-2 mb-1 font-semibold text-amber-950">
+                <Globe className="w-4 h-4 text-amber-600" />
+                <span>Connect Render Backend API</span>
+              </div>
+              <p className="text-[11px] text-amber-800 mb-2.5 leading-relaxed">
+                Frontend is live on Vercel, but no backend URL was detected. Enter your Render service URL to connect:
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type="url"
+                  placeholder="https://your-api.onrender.com"
+                  value={customUrlInput}
+                  onChange={(e) => setCustomUrlInput(e.target.value)}
+                  className="flex-1 px-2.5 py-1.5 rounded-lg border border-amber-300 bg-white text-xs font-mono text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => setCustomApiUrl(customUrlInput)}
+                  className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-medium cursor-pointer"
+                >
+                  Connect
+                </button>
+              </div>
+            </div>
+          )}
+
           <form
             className="space-y-3"
             onSubmit={(e) => {
@@ -102,7 +137,55 @@ export const LoginPage: React.FC = () => {
             </Button>
           </form>
 
-          <p className="text-[11px] text-slate-500 mt-5 text-center leading-relaxed">
+          <div className="mt-4 pt-3 border-t border-slate-100">
+            <div className="flex items-center justify-between text-[11px] text-slate-500">
+              <span className="truncate max-w-[240px] flex items-center gap-1 font-mono text-[10px]">
+                <Link2 className="w-3 h-3 text-slate-400 shrink-0" />
+                API: {activeApi}
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowConfig(!showConfig)}
+                className="text-blue-600 hover:text-blue-800 text-[11px] font-medium cursor-pointer ml-2"
+              >
+                {showConfig ? 'Close' : 'Change'}
+              </button>
+            </div>
+            {showConfig && (
+              <div className="mt-2.5 p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-2">
+                <label className="block text-[10px] font-semibold text-slate-600 uppercase tracking-wide">
+                  Backend API URL (Render / Custom)
+                </label>
+                <div className="flex gap-1.5">
+                  <input
+                    type="url"
+                    placeholder="https://your-api.onrender.com"
+                    value={customUrlInput}
+                    onChange={(e) => setCustomUrlInput(e.target.value)}
+                    className="flex-1 px-2 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-mono text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setCustomApiUrl(customUrlInput)}
+                    className="px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium cursor-pointer"
+                  >
+                    Save
+                  </button>
+                  {activeApi !== '/api' && (
+                    <button
+                      type="button"
+                      onClick={() => setCustomApiUrl(null)}
+                      className="px-2 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-medium cursor-pointer"
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <p className="text-[11px] text-slate-500 mt-3 text-center leading-relaxed">
             Statutory AICTE Approval Process Handbook (APH) compliance workflow.
           </p>
         </div>
