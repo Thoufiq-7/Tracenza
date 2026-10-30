@@ -11,7 +11,7 @@
 import { authApi } from '../api/client';
 import type { EncryptedEnvelope, User } from '../types';
 
-const DB = 'validex-inbox';
+const DB = 'tracenza-inbox';
 const STORE = 'keys';
 
 const idb = (): Promise<IDBDatabase> =>

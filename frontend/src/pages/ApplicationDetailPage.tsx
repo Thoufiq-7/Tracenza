@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft, Play, Gavel, Lock, Columns2, ShieldCheck, Network, Map as MapIcon, ScrollText, Bell, FileSearch, Hash,
-  ChevronDown, ChevronUp, ShieldAlert, Stamp, CheckCircle2, XCircle,
+  ChevronDown, ChevronUp, ShieldAlert, Stamp, CheckCircle2, XCircle, Compass,
 } from 'lucide-react';
 import { applicationsApi, auditApi, documentsApi, errorMessage, notificationsApi, triageApi, validationApi } from '../api/client';
 import type {
@@ -12,8 +12,9 @@ import {
   AIPill, AI_LABELS, AdvisoryNote, Button, Card, DOC_LABELS, Empty, EvidenceViewer, Modal, Pill, RagPill, Spinner, StatusPill, cx, fmtDate, fmtDay, ragDot,
 } from '../components/ui';
 import { DocumentReview } from '../components/DocumentReview';
+import { DependencyRadar } from '../components/radar/DependencyRadar';
 
-type Tab = 'review' | 'rules' | 'evidence' | 'graph' | 'spatial' | 'notices' | 'audit';
+type Tab = 'review' | 'radar' | 'rules' | 'evidence' | 'graph' | 'spatial' | 'notices' | 'audit';
 const APP_WIDE = '__application__';
 const RAG_ORDER: Record<string, number> = { red: 0, amber: 1, green: 2, not_applicable: 3 };
 const worst = (rags: (string | null | undefined)[]) => rags.filter(Boolean).sort((a, b) => RAG_ORDER[a!] - RAG_ORDER[b!])[0] || null;
@@ -24,7 +25,8 @@ export const ApplicationDetailPage: React.FC = () => {
   const [bundle, setBundle] = useState<TriageBundle | null>(null);
   const [notices, setNotices] = useState<NotificationItem[]>([]);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
-  const [tab, setTab] = useState<Tab>('review');
+  const [searchParams] = useSearchParams();
+  const [tab, setTab] = useState<Tab>((searchParams.get('tab') as Tab) || 'review');
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [deciding, setDeciding] = useState(false);
@@ -59,6 +61,7 @@ export const ApplicationDetailPage: React.FC = () => {
   const hasBoundary = bundle.documents.some((d) => d.doc_type === 'campus_boundary');
   const tabs: { key: Tab; label: string; icon: React.ElementType; show?: boolean }[] = [
     { key: 'review', label: 'Split-screen review', icon: Columns2 },
+    { key: 'radar', label: 'Dependency Radar', icon: Compass },
     { key: 'rules', label: `Handbook rules (${bundle.rules.length})`, icon: ShieldCheck },
     { key: 'evidence', label: 'Document evidence', icon: FileSearch },
     { key: 'graph', label: 'Collusion graph', icon: Network },
@@ -125,6 +128,7 @@ export const ApplicationDetailPage: React.FC = () => {
       </div>
 
       {tab === 'review' && <SplitReview bundle={bundle} onReviewed={load} />}
+      {tab === 'radar' && <DependencyRadar bundle={bundle} />}
       {tab === 'rules' && <RulesTable rules={bundle.rules} />}
       {tab === 'evidence' && <DocumentReview documents={(app.documents || [])} isOfficial />}
       {tab === 'graph' && <GraphPanel appId={app.id} />}
