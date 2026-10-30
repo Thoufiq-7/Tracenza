@@ -124,7 +124,7 @@ export const LoginPage: React.FC = () => {
                       {group.items.map((it) => (
                         <button
                           key={it.email}
-                          onClick={() => { setEmail(it.email); setPassword(it.pass); doLogin(it.email, it.pass); }}
+                          onClick={() => { setMode('login'); setEmail(it.email); setPassword(it.pass); doLogin(it.email, it.pass); }}
                           className="flex items-center justify-between p-2 rounded-xl bg-slate-50 hover:bg-blue-50/70 border border-slate-200 hover:border-blue-300 text-left transition-colors cursor-pointer group"
                         >
                           <div>

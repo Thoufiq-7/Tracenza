@@ -51,6 +51,9 @@ export const errorMessage = (err: any): string => {
   const detail = err?.response?.data?.detail;
   if (typeof detail === 'string') return detail;
   if (Array.isArray(detail)) return detail.map((d) => d.msg).join('; ');
+  if (err?.message === 'Network Error' || err?.code === 'ERR_NETWORK') {
+    return 'Network Error: Cannot connect to Tracenza backend API. Ensure the backend server is running on http://127.0.0.1:8000.';
+  }
   return err?.message || 'Request failed';
 };
 

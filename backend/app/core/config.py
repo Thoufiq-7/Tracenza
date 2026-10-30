@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "Tracenza"
     ENVIRONMENT: str = "development"
     DEBUG: bool = False
-    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173"
+    CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173,http://localhost:8000,http://127.0.0.1:8000"
     # Deployed frontend(s); always allowed in addition to CORS_ORIGINS
     FRONTEND_ORIGINS: str = "https://validex-two.vercel.app"
 
