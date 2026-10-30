@@ -1,3 +1,46 @@
+# =====================================================================
+# Tracenza — Version Control Ignore Configuration
+# =====================================================================
+
+# Environment Variables & Sensitive Credentials
+.env
+.env.*
+.env.local
+.env.*.local
+backend/.env
+backend/.env.*
+frontend/.env
+frontend/.env.*
+!.env.example
+!.env.production.example
+!frontend/.env.example
+
+# Secret Keys, Certificates & Tokens
+*.pem
+*.key
+*.p12
+*.pfx
+*.pkcs12
+*.crt
+*.cert
+credentials.json
+secrets/
+id_rsa*
+*.secret
+
+# Databases & Local Storage Vaults
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+validex.db
+backend/validex.db
+tracenza.db
+backend/tracenza.db
+storage_vault/
+backend/storage_vault/
+sample_docs/temp/
+
 # Python & Virtual Environments
 .venv/
 venv/
@@ -9,37 +52,39 @@ __pycache__/
 *.pytest_cache/
 .coverage
 htmlcov/
+.mypy_cache/
+.ruff_cache/
 
-# Node & Frontend
+# Node & Frontend Build Outputs
 node_modules/
 frontend/node_modules/
+dist/
 frontend/dist/
+dist-ssr/
 frontend/dist-ssr/
+.vite/
 frontend/.vite/
 *.local
 
-# Databases & Local Storage
-*.db
-*.sqlite3
-validex.db
-storage_vault/
-sample_docs/temp/
-
-# Environment Variables & Secrets
-.env
-!.env.example
-!.env.production.example
-
-# Logs & OS Files
+# Logs & Temporary Files
 logs/
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.tmp
+*.bak
+*~
+
+# Operating System & IDE Files
 .DS_Store
 Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
 
-# ML model weights (downloaded on first use) and generated evaluation artefacts
+# ML Models & Generated Artefacts
 backend/ml_models/
 ml_models/
 sample_docs/eval/
